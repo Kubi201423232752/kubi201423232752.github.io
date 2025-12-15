@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI 像素貪吃蛇 EX (中文版)</title>
+    <!-- 使用 DotGothic16 字體 -->
+    <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --panel-bg: #2d2d2d;
+            --screen-bg: #8bac0f; /* 經典 GB 淺綠 */
+            --screen-off: #0f380f; /* 經典 GB 深綠 */
+            --snake-color: #0f380f;
+            --food-color: #306230;
+            --highlight: #9bbc0f;
+            --danger: #d95763;
+            --accent: #3b5dc9;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: #efefef;
+            font-family: 'DotGothic16', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow-x: hidden;
+            font-size: 14px;
+            /* 防止手機下拉重整 */
+            overscroll-behavior: none;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin: 10px 0;
+            color: var(--highlight);
+            text-shadow: 0 0 10px rgba(155, 188, 15, 0.5);
+            letter-spacing: 4px;
+            text-transform: uppercase;
+        }
+
+        .main-layout {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: flex-start; /* 讓內容靠上對齊，避免垂直拉伸 */
+            gap: 20px;
+            padding: 10px;
+            max-width: 1200px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .left-column {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            align-items: center;
+            width: 100%;
+            max-width: 440px;
+        }
+
+        /* --- 遊戲機殼與螢幕特效 --- */
+        #game-wrapper {
+            position: relative;
+            border: 20px solid #444;
+            border-bottom-width: 30px; /* 像街機底部比較厚 */
+            border-radius: 15px;
+            box-shadow: 
+                inset 0 0 20px rgba(0,0,0,1),
+                0 0 50px rgba(0,0,0,0.5);
+            background-color: #000;
+            padding: 0;
+            overflow: hidden;
+            /* 手機適配寬度 */
+            width: 100%; 
+            max-width: 440px;
+            box-sizing: border-box;
+        }
+
+        /* 螢幕容器 */
+        .screen-container {
+            position: relative;
+            width: 100%;
+            /* 維持 1:1 比例 */
+            aspect-ratio: 1 / 1;
+            background-color: var(--screen-bg);
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+            image-rendering: pixelated;
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* CRT 掃描線特效 */
+        .scanlines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0,0,0,0.1) 50%,
+                rgba(0,0,0,0.1)
+            );
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        /* 螢幕反光/暈影 */
+        .vignette {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(0,0,0,0) 60%, rgba(0,0,0,0.4) 100%);
+            pointer-events: none;
+            z-index: 11;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 56, 15, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--highlight);
+            text-align: center;
+            z-index: 20;
+            backdrop-filter: blur(2px);
+        }
+        
+        #overlay h2 {
+            font-size: 28px;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 0 #000;
+        }
+
+        /* --- 手機版虛擬搖桿 (D-Pad) --- */
+        #mobile-controls {
+            display: none; /* 電腦版隱藏 */
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 10px;
+            margin-top: 10px;
+            background: #222;
+            padding: 15px;
+            border-radius: 12px;
+            border: 2px solid #555;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            touch-action: none; /* 防止觸控時滾動頁面 */
+            user-select: none;
+        }
+
+        .dpad-btn {
+            width: 60px;
+            height: 60px;
+            background: #444;
+            border: 2px solid #222;
+            border-bottom-width: 6px;
+            border-radius: 8px;
+            color: #aaa;
+            font-size: 24px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 4px 0 #111;
+            transition: transform 0.05s, box-shadow 0.05s;
+            /* 禁止選取文字 */
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        .dpad-btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 0 0 #111;
+            border-bottom-width: 2px;
+            background: #555;
+            color: #fff;
+        }
+
+        /* 手機直立時顯示 D-Pad */
+        @media (max-width: 768px) {
+            #mobile-controls {
+                display: grid;
+            }
+            .instructions-panel {
+                display: none; /* 手機版隱藏操作說明以節省空間 */
+            }
+            .main-layout {
+                gap: 15px;
+            }
+            h1 {
+                font-size: 1.5rem;
+            }
+        }
+
+        /* --- 操作說明面板 (填補下方空隙) --- */
+        .instructions-panel {
+            background: var(--panel-bg);
+            border: 1px solid #555;
+            border-radius: 8px;
+            padding: 15px;
+            width: 100%;
+            max-width: 440px; /* 與遊戲機寬度一致 */
+            box-sizing: border-box;
+            color: #aaa;
+            font-size: 14px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        .instructions-panel h3 {
+            margin: 0 0 10px 0;
+            color: var(--highlight);
+            font-size: 16px;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+        }
+
+        .key-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .key-badge {
+            background: #444;
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            border: 1px solid #666;
+            display: inline-block;
+            min-width: 20px;
+            text-align: center;
+        }
+
+        /* --- 控制面板 --- */
+        #control-panel {
+            background: var(--panel-bg);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #555;
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 440px; /* 手機版與遊戲同寬 */
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            box-sizing: border-box;
+        }
+
+        .panel-section {
+            background: rgba(0,0,0,0.2);
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #444;
+        }
+
+        .section-title {
+            font-size: 12px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+            display: block;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .stat-box {
+            background: #222;
+            padding: 8px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #888;
+            display: block;
+            margin-bottom: 2px;
+        }
+        
+        .stat-value {
+            font-size: 18px;
+            color: var(--highlight);
+            font-weight: bold;
+        }
+
+        /* AI Brain Visualizer Styles */
+        .brain-display {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            background: #222;
+            padding: 10px;
+            border-radius: 6px;
+            align-items: flex-start;
+        }
+
+        .brain-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            flex: 1;
+        }
+
+        .brain-label {
+            font-size: 10px;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        .indicators {
+            display: grid;
+            grid-template-columns: 20px 20px 20px;
+            gap: 2px;
+            justify-items: center;
+            align-items: center;
+        }
+
+        .ind-arrow {
+            font-size: 14px;
+            color: #444;
+            font-weight: bold;
+        }
+
+        .ind-arrow.danger.active { color: #d95763; text-shadow: 0 0 5px #d95763; }
+        .ind-arrow.food.active { color: #9bbc0f; text-shadow: 0 0 5px #9bbc0f; }
+
+        /* Q-Value Bars (Neural Activation) */
+        .q-bars {
+            display: flex;
+            gap: 6px;
+            align-items: flex-end;
+            height: 50px; /* 固定高度 */
+            padding-bottom: 2px;
+        }
+        
+        .q-bar-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 12px;
+            height: 100%;
+            justify-content: flex-end;
+        }
+        
+        .q-bar {
+            width: 100%;
+            background: #444;
+            transition: height 0.1s ease-out, background-color 0.2s;
+            height: 0%;
+            min-height: 2px; /* 即使是 0 也有一個小橫條 */
+            border-radius: 1px;
+        }
+        
+        .q-bar.positive { background: #9bbc0f; box-shadow: 0 0 4px #9bbc0f; }
+        .q-bar.negative { background: #d95763; }
+        
+        .q-label {
+            font-size: 10px;
+            color: #666;
+            margin-top: 2px;
+        }
+        
+        /* 按鈕樣式優化 */
+        button {
+            background: #444;
+            border: none;
+            border-bottom: 4px solid #222;
+            color: white;
+            font-family: 'DotGothic16', sans-serif;
+            padding: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            border-radius: 4px;
+            width: 100%;
+            transition: all 0.1s;
+            text-shadow: 1px 1px 0 #000;
+            /* 避免手機點擊反白 */
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        button:active {
+            transform: translateY(3px);
+            border-bottom-width: 1px;
+        }
+
+        button.primary {
+            background: var(--highlight);
+            color: #0f380f;
+            border-bottom-color: #6a8c0a;
+        }
+
+        button.danger {
+            background: var(--danger);
+            border-bottom-color: #a3323d;
+        }
+        
+        button.action {
+            background: var(--accent);
+            border-bottom-color: #2a459b;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 5px;
+        }
+
+        /* 滑桿樣式 */
+        input[type=range] {
+            width: 100%;
+            height: 6px;
+            background: #555;
+            border-radius: 3px;
+            outline: none;
+            -webkit-appearance: none;
+            margin: 15px 0;
+        }
+        
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: var(--highlight);
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid #000;
+        }
+
+        /* Toggle Checkbox */
+        .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+        
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #555;
+            transition: .4s;
+            border-radius: 20px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider { background-color: var(--highlight); }
+        input:checked + .slider:before { transform: translateX(20px); }
+
+        .mode-toggle {
+            display: flex;
+            background: #222;
+            padding: 3px;
+            border-radius: 6px;
+        }
+
+        .mode-btn {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: #888;
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .mode-btn.active {
+            background: #444;
+            color: #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            transform: none; /* disable active effect for tab */
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>AI 貪吃蛇 <span style="font-size:0.5em; vertical-align: middle; color:#888;">// 像素實驗室</span></h1>
+
+    <div class="main-layout">
+        
+        <div class="left-column">
+            <!-- 遊戲區域 -->
+            <div id="game-wrapper">
+                <div class="screen-container">
+                    <div class="scanlines"></div>
+                    <div class="vignette"></div>
+                    <canvas id="gameCanvas" width="400" height="400"></canvas>
+                    <div id="overlay">
+                        <h2 id="status-text">系統準備就緒</h2>
+                        <button class="primary" style="width: auto; padding: 12px 30px; font-size: 20px;" onclick="toggleGame()">投幣 / 開始遊戲</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 手機版虛擬搖桿 (小螢幕顯示) -->
+            <div id="mobile-controls">
+                <div></div>
+                <div class="dpad-btn" id="m-btn-up">↑</div>
+                <div></div>
+                <div class="dpad-btn" id="m-btn-left">←</div>
+                <div class="dpad-btn" id="m-btn-down">↓</div>
+                <div class="dpad-btn" id="m-btn-right">→</div>
+            </div>
+
+            <!-- 操作說明 (電腦版顯示) -->
+            <div class="instructions-panel">
+                <h3>操作說明</h3>
+                <div class="key-row">
+                    <span>移動方向</span>
+                    <div>
+                        <span class="key-badge">↑</span>
+                        <span class="key-badge">↓</span>
+                        <span class="key-badge">←</span>
+                        <span class="key-badge">→</span>
+                    </div>
+                </div>
+                <div class="key-row">
+                    <span>開始 / 暫停</span>
+                    <span class="key-badge" style="width:50px;">Space</span>
+                </div>
+                <hr style="border:0; border-top:1px dashed #444; margin:10px 0;">
+                <div style="font-size:12px; color:#888;">
+                    目標：吃掉綠色方塊。若開啟 AI 模式，請調整速度並觀察電腦學習。
+                </div>
+            </div>
+        </div>
+
+        <!-- AI 控制面板 -->
+        <div id="control-panel">
+            
+            <!-- 模式選擇 -->
+            <div class="panel-section">
+                <span class="section-title">玩家模式</span>
+                <div class="mode-toggle">
+                    <button id="btn-human" class="mode-btn active" onclick="setMode('human')">人類玩家</button>
+                    <button id="btn-ai" class="mode-btn" onclick="setMode('ai')">AI 電腦</button>
+                </div>
+            </div>
+            
+            <!-- 新增：AI 思維視窗 -->
+            <div class="panel-section" id="ai-brain-panel" style="display:none;">
+                <span class="section-title">AI 思維視窗</span>
+                <div class="brain-display">
+                    
+                    <div class="brain-group">
+                        <span class="brain-label">危險感知</span>
+                        <div class="indicators">
+                            <span></span><span id="d-up" class="ind-arrow danger">↑</span><span></span>
+                            <span id="d-left" class="ind-arrow danger">←</span><span></span><span id="d-right" class="ind-arrow danger">→</span>
+                            <span></span><span id="d-down" class="ind-arrow danger">↓</span><span></span>
+                        </div>
+                    </div>
+                    
+                    <div class="brain-group">
+                        <span class="brain-label">食物雷達</span>
+                        <div class="indicators">
+                            <span></span><span id="f-up" class="ind-arrow food">↑</span><span></span>
+                            <span id="f-left" class="ind-arrow food">←</span><span></span><span id="f-right" class="ind-arrow food">→</span>
+                            <span></span><span id="f-down" class="ind-arrow food">↓</span><span></span>
+                        </div>
+                    </div>
+
+                    <!-- 新增：決策神經元 (Q-Values) -->
+                    <div class="brain-group">
+                        <span class="brain-label">決策神經元 (Q值)</span>
+                        <div class="q-bars">
+                            <div class="q-bar-wrapper"><div id="q-up" class="q-bar"></div><span class="q-label">↑</span></div>
+                            <div class="q-bar-wrapper"><div id="q-down" class="q-bar"></div><span class="q-label">↓</span></div>
+                            <div class="q-bar-wrapper"><div id="q-left" class="q-bar"></div><span class="q-label">←</span></div>
+                            <div class="q-bar-wrapper"><div id="q-right" class="q-bar"></div><span class="q-label">→</span></div>
+                        </div>
+                    </div>
+
+                </div>
+                <div style="text-align: center; font-size: 14px; color: #aaa;">
+                    當前決策: <span id="ai-decision-text" style="color:var(--highlight); font-weight:bold;">-</span>
+                </div>
+            </div>
+
+            <!-- 環境設定 -->
+            <div class="panel-section">
+                <span class="section-title">環境設定</span>
+                
+                <div class="toggle-row">
+                    <label for="obstacle-toggle">隨機障礙物 (牆壁)</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="obstacle-toggle" onchange="toggleObstacles()">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div id="ai-count-group" style="display:none;">
+                    <div style="display:flex; justify-content:space-between;">
+                        <label>AI 數量</label>
+                        <span id="ai-count-val" style="color:var(--highlight)">1</span>
+                    </div>
+                    <input type="range" id="ai-count-slider" min="1" max="10" value="1">
+                </div>
+
+                <div style="display:flex; justify-content:space-between; margin-top:10px;">
+                    <label>模擬速度</label>
+                    <span id="speed-val" style="font-size:12px; color:#888;">正常</span>
+                </div>
+                <input type="range" id="speed-slider" min="1" max="60" value="10">
+            </div>
+
+            <!-- 數據統計 -->
+            <div class="panel-section">
+                <span class="section-title">統計數據</span>
+                <div class="stat-grid">
+                    <div class="stat-box">
+                        <span class="stat-label">世代數</span>
+                        <span class="stat-value" id="stat-episode">0</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-label">最高分</span>
+                        <span class="stat-value" id="stat-high">0</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-label">存活數</span>
+                        <span class="stat-value" id="stat-alive">0</span>
+                    </div>
+                    <div class="stat-box">
+                        <span class="stat-label">探索率</span>
+                        <span class="stat-value" id="stat-epsilon">0%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 系統功能 -->
+            <div class="panel-section">
+                <span class="section-title">記憶卡功能</span>
+                <div class="btn-group">
+                    <button class="action" onclick="saveBrain()">存檔</button>
+                    <button class="action" onclick="loadBrain()">讀檔</button>
+                </div>
+                <button class="danger" style="margin-top:10px;" onclick="resetBrain()">格式化記憶體 (重置)</button>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- 1. CONFIG & SETUP ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const overlay = document.getElementById('overlay');
+        const statusText = document.getElementById('status-text');
+        
+        const TILE_SIZE = 20; 
+        const TILE_COUNT_X = canvas.width / TILE_SIZE; 
+        const TILE_COUNT_Y = canvas.height / TILE_SIZE;
+
+        // 遊戲狀態
+        let gameMode = 'human'; 
+        let isRunning = false;
+        let speedFPS = 10;
+        let lastTime = 0;
+        let animationFrameId;
+        let useObstacles = false;
+
+        // 實體
+        let snakes = []; 
+        let aiCount = 1;
+        let food = {x: 0, y: 0};
+        let obstacles = []; // 障礙物陣列
+        let particles = []; // 粒子特效陣列
+
+        let globalHighScore = 0;
+
+        // --- 2. Q-LEARNING AGENT ---
+        class QLearningAgent {
+            constructor() {
+                this.qTable = {}; 
+                this.epsilon = 1.0; 
+                this.epsilonDecay = 0.995; 
+                this.epsilonMin = 0.01; 
+                this.learningRate = 0.1;
+                this.discountFactor = 0.9;
+                this.episodeCount = 0;
+                
+                this.actions = [
+                    {x: 0, y: -1}, // Up
+                    {x: 0, y: 1},  // Down
+                    {x: -1, y: 0}, // Left
+                    {x: 1, y: 0}   // Right
+                ];
+            }
+
+            // 狀態包含：周圍障礙物 (牆壁、身體、障礙物) + 食物方向
+            getState(head, food, allSnakes, obstacles) {
+                const dangerUp = this.isCollision({x: head.x, y: head.y - 1}, allSnakes, obstacles) ? 1 : 0;
+                const dangerDown = this.isCollision({x: head.x, y: head.y + 1}, allSnakes, obstacles) ? 1 : 0;
+                const dangerLeft = this.isCollision({x: head.x - 1, y: head.y}, allSnakes, obstacles) ? 1 : 0;
+                const dangerRight = this.isCollision({x: head.x + 1, y: head.y}, allSnakes, obstacles) ? 1 : 0;
+
+                const foodUp = food.y < head.y ? 1 : 0;
+                const foodDown = food.y > head.y ? 1 : 0;
+                const foodLeft = food.x < head.x ? 1 : 0;
+                const foodRight = food.x > head.x ? 1 : 0;
+
+                return `${dangerUp}${dangerDown}${dangerLeft}${dangerRight}${foodUp}${foodDown}${foodLeft}${foodRight}`;
+            }
+
+            // 碰撞檢測：邊界、任何蛇身、靜態障礙物
+            isCollision(point, allSnakes, obstacles) {
+                // 1. 牆壁邊界
+                if (point.x < 0 || point.x >= TILE_COUNT_X || point.y < 0 || point.y >= TILE_COUNT_Y) return true;
+                
+                // 2. 靜態障礙物
+                if (useObstacles) {
+                    for (let obs of obstacles) {
+                        if (point.x === obs.x && point.y === obs.y) return true;
+                    }
+                }
+
+                // 3. 任何蛇的身體
+                for (let s of allSnakes) {
+                    if (!s.active) continue; 
+                    for (let i = 0; i < s.body.length; i++) {
+                        if (point.x === s.body[i].x && point.y === s.body[i].y) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            getAction(state) {
+                if (!this.qTable[state]) this.qTable[state] = [0, 0, 0, 0]; 
+
+                if (gameMode === 'ai' && Math.random() < this.epsilon) {
+                    return Math.floor(Math.random() * 4); 
+                } else {
+                    const qValues = this.qTable[state];
+                    let maxQ = -Infinity;
+                    let bestActions = [];
+                    for (let i = 0; i < 4; i++) {
+                        if (qValues[i] > maxQ) {
+                            maxQ = qValues[i];
+                            bestActions = [i];
+                        } else if (qValues[i] === maxQ) {
+                            bestActions.push(i);
+                        }
+                    }
+                    return bestActions[Math.floor(Math.random() * bestActions.length)];
+                }
+            }
+
+            learn(state, action, reward, nextState) {
+                if (!this.qTable[nextState]) this.qTable[nextState] = [0, 0, 0, 0];
+
+                const currentQ = this.qTable[state][action];
+                const maxNextQ = Math.max(...this.qTable[nextState]);
+                const newQ = currentQ + this.learningRate * (reward + this.discountFactor * maxNextQ - currentQ);
+                this.qTable[state][action] = newQ;
+            }
+
+            endEpisode() {
+                this.episodeCount++;
+                if (this.epsilon > this.epsilonMin) {
+                    this.epsilon *= this.epsilonDecay;
+                }
+                updateStats();
+            }
+
+            reset() {
+                this.qTable = {};
+                this.epsilon = 1.0;
+                this.episodeCount = 0;
+                globalHighScore = 0;
+                updateStats();
+            }
+        }
+
+        const agent = new QLearningAgent();
+
+        // --- 3. PARTICLES & EFFECTS ---
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.vx = (Math.random() - 0.5) * 10; // 速度
+                this.vy = (Math.random() - 0.5) * 10;
+                this.life = 1.0; // 透明度/生命
+                this.decay = 0.05 + Math.random() * 0.05;
+            }
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life -= this.decay;
+            }
+            draw(ctx) {
+                ctx.globalAlpha = Math.max(0, this.life);
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, 4, 4);
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        function createExplosion(tileX, tileY, color) {
+            // 轉成像素座標
+            const px = tileX * TILE_SIZE + TILE_SIZE/2;
+            const py = tileY * TILE_SIZE + TILE_SIZE/2;
+            for(let i=0; i<8; i++) {
+                particles.push(new Particle(px, py, color));
+            }
+        }
+
+        // --- 4. GAME LOGIC ---
+
+        function initGame() {
+            snakes = [];
+            particles = [];
+            obstacles = [];
+            
+            // 產生障礙物
+            if (useObstacles) {
+                generateObstacles();
+            }
+
+            const count = (gameMode === 'human') ? 1 : aiCount;
+            for(let i=0; i<count; i++) createSnake(i);
+
+            placeFood();
+            
+            if (gameMode === 'human') {
+                snakes[0].velocity = {x: 0, y: 0};
+                snakes[0].nextVelocity = {x: 0, y: 0};
+            }
+
+            updateStats();
+        }
+
+        function generateObstacles() {
+            const numObstacles = 15; // 隨機生成 15 個牆壁
+            for(let i=0; i<numObstacles; i++) {
+                obstacles.push({
+                    x: Math.floor(Math.random() * TILE_COUNT_X),
+                    y: Math.floor(Math.random() * TILE_COUNT_Y)
+                });
+            }
+        }
+
+        function createSnake(id) {
+            // 嘗試找到一個沒有障礙物的位置出生
+            let startX, startY, valid = false;
+            let safety = 0;
+            while(!valid && safety < 100) {
+                startX = Math.floor(Math.random() * (TILE_COUNT_X - 6)) + 3;
+                startY = Math.floor(Math.random() * (TILE_COUNT_Y - 6)) + 3;
+                // 檢查是否跟障礙物重疊
+                let overlap = false;
+                if(useObstacles) {
+                    for(let obs of obstacles) {
+                        if(obs.x === startX && obs.y === startY) overlap = true;
+                    }
+                }
+                if(!overlap) valid = true;
+                safety++;
+            }
+
+            snakes.push({
+                id: id,
+                body: [{x: startX, y: startY}, {x: startX, y: startY+1}, {x: startX, y: startY+2}],
+                velocity: {x: 0, y: -1},
+                nextVelocity: {x: 0, y: -1},
+                active: true,
+                score: 0,
+                color: (id === 0 && gameMode === 'human') ? '#0f380f' : 
+                       `rgb(${20 + Math.random()*40}, ${60 + Math.random()*80}, ${20 + Math.random()*40})`
+            });
+        }
+
+        function placeFood() {
+            let valid = false;
+            while (!valid) {
+                food = {
+                    x: Math.floor(Math.random() * TILE_COUNT_X),
+                    y: Math.floor(Math.random() * TILE_COUNT_Y)
+                };
+                // 檢查是否撞到蛇或障礙物
+                valid = !agent.isCollision(food, snakes, obstacles);
+            }
+        }
+
+        function toggleGame() {
+            if (isRunning) {
+                isRunning = false;
+                cancelAnimationFrame(animationFrameId);
+                overlay.style.display = 'flex';
+                statusText.innerText = "已暫停";
+            } else {
+                overlay.style.display = 'none';
+                initGame();
+                isRunning = true;
+                lastTime = performance.now();
+                gameLoop(lastTime);
+            }
+        }
+
+        function gameLoop(timestamp) {
+            if (!isRunning) return;
+
+            // 更新粒子特效 (不依賴 FPS，每一幀都跑，看起來更流暢)
+            updateParticles();
+
+            const timeSinceLastFrame = timestamp - lastTime;
+            const threshold = 1000 / speedFPS;
+
+            if (timeSinceLastFrame >= threshold) {
+                lastTime = timestamp;
+                update();
+            }
+            
+            // 繪圖每一幀都做，確保粒子流暢
+            draw();
+
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                if (particles[i].life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        function update() {
+            let activeSnakesCount = 0;
+            let firstActiveAI = null; // 追蹤第一隻活著的 AI
+
+            snakes.forEach(snake => {
+                if (!snake.active) return;
+                activeSnakesCount++;
+                if (!firstActiveAI && gameMode === 'ai') firstActiveAI = snake;
+
+                let state, actionIndex, actionVec;
+                const head = snake.body[0];
+
+                if (gameMode === 'ai') {
+                    state = agent.getState(head, food, snakes, obstacles);
+                    actionIndex = agent.getAction(state);
+                    actionVec = agent.actions[actionIndex];
+                    
+                    const isOpposite = (actionVec.x === -snake.velocity.x && actionVec.y === -snake.velocity.y && (snake.velocity.x !==0 || snake.velocity.y !==0));
+                    if (!isOpposite) {
+                        snake.velocity = actionVec;
+                    }
+
+                    // --- 更新 AI 思維視窗 (只顯示第一隻活著的 AI) ---
+                    if (snake === firstActiveAI) {
+                        updateBrainUI(state); // 只傳入 state，因為 Q 值在 function 內讀取
+                    }
+                } else {
+                    if (snake.nextVelocity.x !== 0 || snake.nextVelocity.y !== 0) {
+                        snake.velocity = snake.nextVelocity;
+                    }
+                }
+
+                if (snake.velocity.x === 0 && snake.velocity.y === 0) return;
+
+                const newHead = { x: head.x + snake.velocity.x, y: head.y + snake.velocity.y };
+                
+                let reward = 0;
+                let dead = false;
+
+                if (agent.isCollision(newHead, snakes, obstacles)) {
+                    dead = true;
+                    // ★ 死亡懲罰改為 -1 (原本是 -10)
+                    reward = -1;
+                    createExplosion(newHead.x, newHead.y, '#d95763'); 
+                } else if (newHead.x === food.x && newHead.y === food.y) {
+                    // ★ 吃食物邏輯 (變長機制)：
+                    // 1. 將新的頭部位置加入陣列前端 (unshift)
+                    // 2. 【關鍵】這裡不執行 pop() 移除尾巴，所以身體總長度會 +1
+                    snake.body.unshift(newHead);
+                    
+                    snake.score += 1; 
+                    globalHighScore = Math.max(snake.score, globalHighScore);
+                    reward = 1; // 唯一正向獎勵
+                    createExplosion(newHead.x, newHead.y, '#9bbc0f'); 
+                    placeFood();
+                } else {
+                    // ★ 一般移動邏輯 (保持長度)：
+                    // 1. 加入新頭部
+                    // 2. 移除舊尾巴 (pop)，這樣蛇才會像是在移動而不是無限變長
+                    snake.body.unshift(newHead);
+                    snake.body.pop();
+                    reward = 0; // 移除輔助獎勵
+                }
+
+                if (gameMode === 'ai') {
+                    const nextState = dead ? null : agent.getState(newHead, food, snakes, obstacles);
+                    
+                    let actualActionIndex = -1;
+                    if(snake.velocity.x === 0 && snake.velocity.y === -1) actualActionIndex = 0;
+                    if(snake.velocity.x === 0 && snake.velocity.y === 1) actualActionIndex = 1;
+                    if(snake.velocity.x === -1 && snake.velocity.y === 0) actualActionIndex = 2;
+                    if(snake.velocity.x === 1 && snake.velocity.y === 0) actualActionIndex = 3;
+
+                    // AI 思維更新決策文字 (這裡更新才能確保與 actionIndex 同步)
+                    if (snake === firstActiveAI) {
+                        const actions = ['向上', '向下', '向左', '向右'];
+                        document.getElementById('ai-decision-text').innerText = actions[actionIndex] || '-';
+                    }
+
+                    if (actualActionIndex !== -1 && state) {
+                         if (!dead) {
+                             agent.learn(state, actualActionIndex, reward, nextState);
+                         } else {
+                             const currentQ = agent.qTable[state][actualActionIndex];
+                             const newQ = currentQ + agent.learningRate * (reward - currentQ);
+                             agent.qTable[state][actualActionIndex] = newQ;
+                         }
+                    }
+                }
+
+                if (dead) {
+                    // ★ 分數邏輯修改：撞牆不歸零，只扣 1 分 (最低扣到 0)
+                    snake.score = Math.max(0, snake.score - 1);
+                    
+                    snake.active = false;
+                    activeSnakesCount--;
+                    if (gameMode === 'human') {
+                         isRunning = false;
+                         statusText.innerText = "遊戲結束";
+                         overlay.style.display = 'flex';
+                    }
+                }
+            });
+
+            document.getElementById('stat-alive').innerText = activeSnakesCount;
+
+            if (gameMode === 'ai' && activeSnakesCount === 0) {
+                agent.endEpisode();
+                initGame();
+            }
+        }
+
+        // --- UI 更新函式 ---
+        function updateBrainUI(state) {
+            // State string format: D_Up, D_Down, D_Left, D_Right, F_Up, F_Down, F_Left, F_Right
+            const bits = state.split('');
+            
+            // 危險感知 (0-3)
+            const setInd = (id, active) => {
+                const el = document.getElementById(id);
+                if(active) el.classList.add('active');
+                else el.classList.remove('active');
+            };
+
+            setInd('d-up', bits[0] === '1');
+            setInd('d-down', bits[1] === '1');
+            setInd('d-left', bits[2] === '1');
+            setInd('d-right', bits[3] === '1');
+
+            // 食物雷達 (4-7)
+            setInd('f-up', bits[4] === '1');
+            setInd('f-down', bits[5] === '1');
+            setInd('f-left', bits[6] === '1');
+            setInd('f-right', bits[7] === '1');
+            
+            // 更新 Q 值 (神經元)
+            const qValues = agent.qTable[state] || [0, 0, 0, 0];
+            updateQBar('q-up', qValues[0]);
+            updateQBar('q-down', qValues[1]);
+            updateQBar('q-left', qValues[2]);
+            updateQBar('q-right', qValues[3]);
+        }
+
+        function updateQBar(id, val) {
+            const el = document.getElementById(id);
+            // 視覺化縮放: 假設最大值約 2-5 (食物獎勵積累), 最小值 -10 (死亡)
+            // 將其映射到高度百分比
+            let height = 0;
+            el.className = 'q-bar';
+            
+            if (val > 0) {
+                // 正值：滿分約設為 2.0 (只要有吃到食物的跡象就很高)
+                height = Math.min((val / 2) * 100, 100);
+                el.classList.add('positive');
+            } else if (val < 0) {
+                // 負值：滿分設為 10 (死亡是 -10)
+                height = Math.min((Math.abs(val) / 10) * 100, 100);
+                el.classList.add('negative');
+            }
+            // 設個最小值以免全空
+            if(height < 5) height = 5;
+            
+            el.style.height = height + '%';
+        }
+
+        function draw() {
+            // 背景
+            ctx.fillStyle = '#8bac0f';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 障礙物 (牆壁)
+            if (useObstacles) {
+                ctx.fillStyle = '#0f380f'; // 深色障礙物
+                obstacles.forEach(obs => {
+                    ctx.fillRect(obs.x * TILE_SIZE, obs.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+                    ctx.strokeRect(obs.x * TILE_SIZE, obs.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                });
+            }
+
+            // 食物 (蘋果)
+            ctx.fillStyle = '#306230';
+            const fx = food.x * TILE_SIZE + 2;
+            const fy = food.y * TILE_SIZE + 2;
+            const fs = TILE_SIZE - 4;
+            ctx.fillRect(fx, fy, fs, fs);
+
+            // 蛇
+            snakes.forEach(snake => {
+                if (!snake.active) return;
+                ctx.fillStyle = snake.color; 
+                snake.body.forEach((part, index) => {
+                    ctx.fillRect(part.x * TILE_SIZE + 1, part.y * TILE_SIZE + 1, TILE_SIZE - 2, TILE_SIZE - 2);
+                    if (index === 0) {
+                        ctx.fillStyle = '#9bbc0f';
+                        const es = 4;
+                        ctx.fillRect(part.x * TILE_SIZE + 4, part.y * TILE_SIZE + 4, es, es);
+                        ctx.fillStyle = snake.color;
+                    }
+                });
+            });
+
+            // 粒子特效
+            particles.forEach(p => p.draw(ctx));
+
+            // 分數
+            ctx.fillStyle = '#0f380f';
+            ctx.font = '14px "DotGothic16"';
+            ctx.fillText(`分數: ${snakes[0] ? snakes[0].score : 0}`, 10, 20);
+        }
+
+        // --- 5. UI & CONTROLS ---
+
+        function setMode(mode) {
+            gameMode = mode;
+            document.getElementById('btn-human').classList.toggle('active', mode === 'human');
+            document.getElementById('btn-ai').classList.toggle('active', mode === 'ai');
+            document.getElementById('ai-count-group').style.display = (mode === 'ai') ? 'block' : 'none';
+            document.getElementById('ai-brain-panel').style.display = (mode === 'ai') ? 'block' : 'none'; // 切換面板顯示
+            
+            // 重置
+            isRunning = false;
+            cancelAnimationFrame(animationFrameId);
+            overlay.style.display = 'flex';
+            statusText.innerText = mode === 'ai' ? "AI 準備就緒" : "玩家準備就緒";
+        }
+        
+        function toggleObstacles() {
+            useObstacles = document.getElementById('obstacle-toggle').checked;
+            // 如果遊戲正在進行，重置以套用新地圖
+            if(isRunning) {
+                toggleGame(); // 暫停
+                statusText.innerText = "地圖已更換";
+            }
+        }
+
+        // 存檔功能
+        function saveBrain() {
+            try {
+                const data = {
+                    qTable: agent.qTable,
+                    episodeCount: agent.episodeCount,
+                    epsilon: agent.epsilon,
+                    highScore: globalHighScore
+                };
+                localStorage.setItem('snake_ai_brain_v2', JSON.stringify(data));
+                alert("存檔成功！大腦已備份至瀏覽器。");
+            } catch(e) {
+                alert("存檔失敗 (可能是儲存空間不足)");
+            }
+        }
+
+        function loadBrain() {
+            const json = localStorage.getItem('snake_ai_brain_v2');
+            if (json) {
+                try {
+                    const data = JSON.parse(json);
+                    agent.qTable = data.qTable || {};
+                    agent.episodeCount = data.episodeCount || 0;
+                    agent.epsilon = data.epsilon || 1.0;
+                    globalHighScore = data.highScore || 0;
+                    updateStats();
+                    alert("讀取成功！AI 變聰明了。");
+                } catch(e) {
+                    alert("存檔損壞！");
+                }
+            } else {
+                alert("找不到存檔！請先進行訓練並存檔。");
+            }
+        }
+
+        function resetBrain() {
+            if(confirm("確定要洗掉 AI 的記憶嗎？這無法復原。")) {
+                agent.reset();
+                localStorage.removeItem('snake_ai_brain_v2');
+            }
+        }
+
+        // 鍵盤與滑桿
+        document.addEventListener('keydown', (e) => {
+            if (gameMode !== 'human' || snakes.length === 0) return;
+            const p = snakes[0];
+            if (!p.active) return;
+            if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight", "Space"].indexOf(e.code) > -1) e.preventDefault();
+
+            const gu = p.velocity.y === -1, gd = p.velocity.y === 1;
+            const gr = p.velocity.x === 1, gl = p.velocity.x === -1;
+
+            if (e.key === 'ArrowUp' && !gd) p.nextVelocity = {x: 0, y: -1};
+            if (e.key === 'ArrowDown' && !gu) p.nextVelocity = {x: 0, y: 1};
+            if (e.key === 'ArrowLeft' && !gr) p.nextVelocity = {x: -1, y: 0};
+            if (e.key === 'ArrowRight' && !gl) p.nextVelocity = {x: 1, y: 0};
+            if (e.code === 'Space') toggleGame();
+        });
+
+        // Mobile Controls Listeners
+        const setupMobileBtn = (id, x, y) => {
+            const btn = document.getElementById(id);
+            const handler = (e) => {
+                if(e.cancelable) e.preventDefault();
+                
+                // 震動回饋 (如果裝置支援)
+                if (navigator.vibrate) navigator.vibrate(10);
+
+                if (gameMode !== 'human' || snakes.length === 0) return;
+                const p = snakes[0];
+                if (!p.active) return;
+                
+                const gu = p.velocity.y === -1, gd = p.velocity.y === 1;
+                const gr = p.velocity.x === 1, gl = p.velocity.x === -1;
+                
+                if (y === -1 && !gd) p.nextVelocity = {x: 0, y: -1};
+                if (y === 1 && !gu) p.nextVelocity = {x: 0, y: 1};
+                if (x === -1 && !gr) p.nextVelocity = {x: -1, y: 0};
+                if (x === 1 && !gl) p.nextVelocity = {x: 1, y: 0};
+            };
+            
+            // 使用 touchstart 確保反應靈敏
+            btn.addEventListener('touchstart', handler, {passive: false});
+            btn.addEventListener('mousedown', handler);
+        };
+
+        setupMobileBtn('m-btn-up', 0, -1);
+        setupMobileBtn('m-btn-down', 0, 1);
+        setupMobileBtn('m-btn-left', -1, 0);
+        setupMobileBtn('m-btn-right', 1, 0);
+
+        const speedSlider = document.getElementById('speed-slider');
+        const speedVal = document.getElementById('speed-val');
+        speedSlider.addEventListener('input', (e) => {
+            let val = parseInt(e.target.value);
+            if (val > 50) val = val * 5; 
+            speedFPS = val;
+            speedVal.innerText = val > 60 ? "極速" : (val > 30 ? "快速" : "正常");
+        });
+
+        const aiCountSlider = document.getElementById('ai-count-slider');
+        const aiCountVal = document.getElementById('ai-count-val');
+        aiCountSlider.addEventListener('input', (e) => {
+            aiCount = parseInt(e.target.value);
+            aiCountVal.innerText = aiCount;
+        });
+
+        function updateStats() {
+            document.getElementById('stat-episode').innerText = agent.episodeCount;
+            document.getElementById('stat-high').innerText = globalHighScore;
+            document.getElementById('stat-epsilon').innerText = Math.round(agent.epsilon * 100) + "%";
+        }
+        
+        updateStats();
+
+    </script>
+</body>
+</html>
